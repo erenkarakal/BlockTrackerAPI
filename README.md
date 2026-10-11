@@ -8,6 +8,9 @@ Every block gets a single bit:
 
 The data is stored per world in SQLite and only modified chunks are stored.
 
+**Disclaimer**: This plugin was made for personal use on my own server.
+So I am not looking to adding new features unless it's interesting.
+
 ---
 
 ## Concepts
