@@ -1,6 +1,6 @@
 # BlockTrackerAPI
 
-A Paper API for checking if a block was naturally generated or placed by a player.
+A 1.21.11+ Paper API for checking if a block was naturally generated or placed by a player.
 
 Every block gets a single bit:
 - `0` = natural (world generated)
