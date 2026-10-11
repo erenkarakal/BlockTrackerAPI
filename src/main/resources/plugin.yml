@@ -1,0 +1,7 @@
+name: BlockTrackerAPI
+version: '${version}'
+author: karakulak
+
+main: me.eren.blocktrackerapi.BlockTrackerAPI
+api-version: '1.21'
+load: POSTWORLD
