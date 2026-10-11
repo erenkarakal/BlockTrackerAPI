@@ -6,10 +6,10 @@ Every block gets a single bit:
 - `0` = natural (world generated)
 - `1` = not natural (player placed).
 
-The data is stored per world in SQLite and only modified chunks are stored.
+The data is stored per world in SQLite or PDC and only modified chunks are stored.
 
 **Disclaimer**: This plugin was made for personal use on my own server.
-So I am not looking to adding new features unless it's interesting.
+So I am not looking to add suggested features unless it's interesting.
 
 ---
 
