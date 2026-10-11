@@ -1,18 +1,21 @@
 package me.eren.blocktrackerapi.storage;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import org.bukkit.Chunk;
 
-import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 
 public interface TrackerStorage extends AutoCloseable {
 
-	Map<Integer, long[]> loadChunk(int chunkX, int chunkZ) throws SQLException;
+	Map<Integer, long[]> loadChunk(Chunk chunk);
 
-	LongOpenHashSet loadModifiedChunks() throws SQLException;
+	/**
+	 * @return the modified-chunk index, or {@code null} if this backend has no global index (e.g. PDC).
+	 */
+	LongOpenHashSet loadModifiedChunks();
 
-	void writeSections(int chunkX, int chunkZ, List<SectionWrite> sections) throws SQLException;
+	void writeSections(Chunk chunk, List<SectionWrite> sections);
 
 	@Override
 	void close();

@@ -3,11 +3,13 @@ package me.eren.blocktrackerapi.tracker;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import me.eren.blocktrackerapi.storage.StorageException;
 import me.eren.blocktrackerapi.storage.TrackerStorage;
 import me.eren.blocktrackerapi.storage.TrackerStorage.SectionWrite;
 import me.eren.blocktrackerapi.util.ChunkKey;
+import org.bukkit.Chunk;
+import org.bukkit.World;
 
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +19,7 @@ import java.util.logging.Logger;
 
 public final class WorldTracker {
 
+	private final World world;
 	private final UUID worldId;
 	private final int minSection;
 	private final int sectionCount;
@@ -24,13 +27,15 @@ public final class WorldTracker {
 	private final Logger logger;
 
 	private final Long2ObjectMap<ChunkData> chunks = new Long2ObjectOpenHashMap<>();
+	private final Long2ObjectMap<Chunk> chunkRefs = new Long2ObjectOpenHashMap<>();
 	private final LongOpenHashSet loadedChunks = new LongOpenHashSet();
 	private final LongOpenHashSet modifiedChunks = new LongOpenHashSet();
 	private final Long2ObjectMap<LongOpenHashSet> dirtySections = new Long2ObjectOpenHashMap<>();
 	private final boolean filterReady;
 
-	public WorldTracker(UUID worldId, int minSection, int sectionCount, TrackerStorage storage, Logger logger) {
-		this.worldId = worldId;
+	public WorldTracker(World world, int minSection, int sectionCount, TrackerStorage storage, Logger logger) {
+		this.world = world;
+		this.worldId = world.getUID();
 		this.minSection = minSection;
 		this.sectionCount = sectionCount;
 		this.storage = storage;
@@ -39,33 +44,39 @@ public final class WorldTracker {
 	}
 
 	private boolean loadModifiedChunks() {
+		LongOpenHashSet index;
 		try {
-			modifiedChunks.addAll(storage.loadModifiedChunks());
-			return true;
-		} catch (SQLException e) {
-			logger.log(Level.SEVERE, "Failed to load modified chunk index for world " + worldId, e);
+			index = storage.loadModifiedChunks();
+		} catch (StorageException e) {
+			logger.log(Level.SEVERE, "Failed to load modified chunk index for world " + world.getName(), e);
 			return false;
 		}
+		if (index == null) {
+			return false;
+		}
+		modifiedChunks.addAll(index);
+		return true;
 	}
 
 	public UUID worldId() {
 		return worldId;
 	}
 
-	public void loadChunk(int chunkX, int chunkZ) {
-		long key = ChunkKey.of(chunkX, chunkZ);
+	public void loadChunk(Chunk chunk) {
+		long key = ChunkKey.of(chunk.getX(), chunk.getZ());
 		if (!loadedChunks.add(key)) {
 			return;
 		}
+		chunkRefs.put(key, chunk);
 		if (filterReady && !modifiedChunks.contains(key)) {
 			return;
 		}
 		try {
-			Map<Integer, long[]> saved = storage.loadChunk(chunkX, chunkZ);
+			Map<Integer, long[]> saved = storage.loadChunk(chunk);
 			if (saved.isEmpty()) {
 				return;
 			}
-			ChunkData chunk = new ChunkData(sectionCount);
+			ChunkData data = new ChunkData(sectionCount);
 			boolean any = false;
 			for (Map.Entry<Integer, long[]> entry : saved.entrySet()) {
 				int relative = entry.getKey() - minSection;
@@ -73,37 +84,38 @@ public final class WorldTracker {
 				if (relative < 0 || relative >= sectionCount || words == null || ChunkData.isZero(words)) {
 					continue;
 				}
-				chunk.setSectionWords(relative, words);
+				data.setSectionWords(relative, words);
 				any = true;
 			}
 			if (any) {
-				chunks.put(key, chunk);
+				chunks.put(key, data);
 			}
-		} catch (SQLException e) {
-			logger.log(Level.SEVERE, "Failed to load block data for chunk " + chunkX + ", " + chunkZ, e);
+		} catch (StorageException e) {
+			logger.log(Level.SEVERE, "Failed to load block data for chunk " + chunk.getX() + ", " + chunk.getZ(), e);
 		}
 	}
 
-	public void unloadChunk(int chunkX, int chunkZ) {
-		long key = ChunkKey.of(chunkX, chunkZ);
+	public void unloadChunk(Chunk chunk) {
+		long key = ChunkKey.of(chunk.getX(), chunk.getZ());
 		if (!loadedChunks.remove(key)) {
 			return;
 		}
-		flushChunk(key);
+		flushChunk(key, chunk);
 		chunks.remove(key);
 		dirtySections.remove(key);
+		chunkRefs.remove(key);
 	}
 
 	public boolean isNatural(int x, int y, int z) {
-		ChunkData chunk = chunks.get(ChunkKey.of(x >> 4, z >> 4));
-		if (chunk == null) {
+		ChunkData data = chunks.get(ChunkKey.of(x >> 4, z >> 4));
+		if (data == null) {
 			return true;
 		}
 		int relative = (y >> 4) - minSection;
 		if (relative < 0 || relative >= sectionCount) {
 			return true;
 		}
-		return chunk.isNatural(relative, blockIndex(x, y, z));
+		return data.isNatural(relative, blockIndex(x, y, z));
 	}
 
 	public void setNatural(int x, int y, int z, boolean natural) {
@@ -117,22 +129,24 @@ public final class WorldTracker {
 		}
 		int index = blockIndex(x, y, z);
 
-		ChunkData chunk = chunks.get(key);
-		if (chunk == null) {
+		ChunkData data = chunks.get(key);
+		if (data == null) {
 			if (natural) {
 				return;
 			}
-			chunk = new ChunkData(sectionCount);
-			chunks.put(key, chunk);
+			data = new ChunkData(sectionCount);
+			chunks.put(key, data);
 		}
 
-		if (chunk.setNatural(relative, index, natural)) {
-			if (natural) {
-				if (chunk.isEmpty()) {
-					modifiedChunks.remove(key);
+		if (data.setNatural(relative, index, natural)) {
+			if (filterReady) {
+				if (natural) {
+					if (data.isEmpty()) {
+						modifiedChunks.remove(key);
+					}
+				} else {
+					modifiedChunks.add(key);
 				}
-			} else {
-				modifiedChunks.add(key);
 			}
 			dirtySections.computeIfAbsent(key, ignored -> new LongOpenHashSet()).add(relative);
 		}
@@ -140,7 +154,12 @@ public final class WorldTracker {
 
 	public void saveAll() {
 		for (long key : dirtySections.keySet().toLongArray()) {
-			flushChunk(key);
+			Chunk chunk = chunkRefs.get(key);
+			if (chunk == null) {
+				logger.warning("Skipping unsaved block data for an unloaded chunk in world " + world.getName());
+				continue;
+			}
+			flushChunk(key, chunk);
 		}
 		dirtySections.clear();
 	}
@@ -150,31 +169,29 @@ public final class WorldTracker {
 		storage.close();
 	}
 
-	private void flushChunk(long key) {
+	private void flushChunk(long key, Chunk chunk) {
 		LongOpenHashSet dirty = dirtySections.get(key);
 		if (dirty == null || dirty.isEmpty()) {
 			return;
 		}
-		ChunkData chunk = chunks.get(key);
+		ChunkData data = chunks.get(key);
 		List<SectionWrite> writes = new ArrayList<>(dirty.size());
 		for (long relative : dirty) {
-			long[] words = chunk == null ? null : chunk.sectionWords((int) relative);
+			long[] words = data == null ? null : data.sectionWords((int) relative);
 			if (words == null || ChunkData.isZero(words)) {
 				writes.add(new SectionWrite((int) relative + minSection, null));
 			} else {
 				writes.add(new SectionWrite((int) relative + minSection, words));
 			}
 		}
-
-		int chunkX = ChunkKey.x(key);
-		int chunkZ = ChunkKey.z(key);
 		try {
-			storage.writeSections(chunkX, chunkZ, writes);
-			if (chunk == null || chunk.isEmpty()) {
+			storage.writeSections(chunk, writes);
+			if (filterReady && (data == null || data.isEmpty())) {
 				modifiedChunks.remove(key);
 			}
-		} catch (SQLException e) {
-			logger.log(Level.SEVERE, "Failed to save block data for chunk " + chunkX + ", " + chunkZ, e);
+		} catch (StorageException e) {
+			logger.log(Level.SEVERE, "Failed to save block data for chunk "
+					+ ChunkKey.x(key) + ", " + ChunkKey.z(key), e);
 		}
 	}
 

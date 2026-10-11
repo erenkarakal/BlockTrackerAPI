@@ -2,6 +2,7 @@ package me.eren.blocktrackerapi.storage;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.eren.blocktrackerapi.util.ChunkKey;
+import org.bukkit.Chunk;
 
 import java.io.File;
 import java.sql.Connection;
@@ -77,34 +78,43 @@ public final class SqliteTrackerStorage implements TrackerStorage {
 	}
 
 	@Override
-	public Map<Integer, long[]> loadChunk(int chunkX, int chunkZ) throws SQLException {
+	public Map<Integer, long[]> loadChunk(Chunk chunk) {
 		Map<Integer, long[]> sections = new HashMap<>();
-		selectChunk.setInt(1, chunkX);
-		selectChunk.setInt(2, chunkZ);
-		try (ResultSet result = selectChunk.executeQuery()) {
-			while (result.next()) {
-				sections.put(result.getInt(1), SectionCodec.decode(result.getBytes(2)));
+		int chunkX = chunk.getX();
+		int chunkZ = chunk.getZ();
+		try {
+			selectChunk.setInt(1, chunkX);
+			selectChunk.setInt(2, chunkZ);
+			try (ResultSet result = selectChunk.executeQuery()) {
+				while (result.next()) {
+					sections.put(result.getInt(1), SectionCodec.decode(result.getBytes(2)));
+				}
 			}
+		} catch (SQLException e) {
+			throw new StorageException("Failed to load chunk " + chunkX + ", " + chunkZ, e);
 		}
 		return sections;
 	}
 
 	@Override
-	public LongOpenHashSet loadModifiedChunks() throws SQLException {
+	public LongOpenHashSet loadModifiedChunks() {
 		LongOpenHashSet chunks = new LongOpenHashSet();
 		try (ResultSet result = selectModifiedChunks.executeQuery()) {
 			while (result.next()) {
 				chunks.add(ChunkKey.of(result.getInt(1), result.getInt(2)));
 			}
+		} catch (SQLException e) {
+			throw new StorageException("Failed to load modified chunk index", e);
 		}
 		return chunks;
 	}
 
 	@Override
-	public void writeSections(int chunkX, int chunkZ, List<SectionWrite> sections) throws SQLException {
-		boolean autoCommit = connection.getAutoCommit();
-		connection.setAutoCommit(false);
+	public void writeSections(Chunk chunk, List<SectionWrite> sections) {
+		int chunkX = chunk.getX();
+		int chunkZ = chunk.getZ();
 		try {
+			connection.setAutoCommit(false);
 			for (SectionWrite section : sections) {
 				if (section.words() == null) {
 					deleteSection.setInt(1, chunkX);
@@ -123,10 +133,16 @@ public final class SqliteTrackerStorage implements TrackerStorage {
 			upsertSection.executeBatch();
 			connection.commit();
 		} catch (SQLException e) {
-			connection.rollback();
-			throw e;
+			try {
+				connection.rollback();
+			} catch (SQLException ignored) {
+			}
+			throw new StorageException("Failed to save chunk " + chunkX + ", " + chunkZ, e);
 		} finally {
-			connection.setAutoCommit(autoCommit);
+			try {
+				connection.setAutoCommit(true);
+			} catch (SQLException ignored) {
+			}
 		}
 	}
 

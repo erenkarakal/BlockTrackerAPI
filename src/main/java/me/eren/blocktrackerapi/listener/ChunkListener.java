@@ -1,7 +1,6 @@
 package me.eren.blocktrackerapi.listener;
 
 import me.eren.blocktrackerapi.tracker.BlockTrackerImpl;
-import org.bukkit.Chunk;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.world.ChunkLoadEvent;
@@ -17,14 +16,12 @@ public final class ChunkListener implements Listener {
 
 	@EventHandler
 	public void onChunkLoad(ChunkLoadEvent event) {
-		Chunk chunk = event.getChunk();
-		tracker.loadChunk(event.getWorld(), chunk.getX(), chunk.getZ());
+		tracker.loadChunk(event.getChunk());
 	}
 
 	@EventHandler
 	public void onChunkUnload(ChunkUnloadEvent event) {
-		Chunk chunk = event.getChunk();
-		tracker.unloadChunk(event.getWorld(), chunk.getX(), chunk.getZ());
+		tracker.unloadChunk(event.getChunk());
 	}
 
 }

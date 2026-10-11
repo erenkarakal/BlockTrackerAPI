@@ -1,0 +1,8 @@
+# storage:
+#   pdc    - store data on each chunk's PDC. Should be faster, but will cause larger world files
+#   sqlite - store data in a per-world SQLite database in this plugin's folder
+storage: pdc
+
+# worlds to skip entirely.
+untracked-worlds:
+  - example_world

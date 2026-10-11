@@ -5,12 +5,17 @@ import me.eren.blocktrackerapi.listener.BlockListener;
 import me.eren.blocktrackerapi.listener.ChunkListener;
 import me.eren.blocktrackerapi.listener.MechanismListener;
 import me.eren.blocktrackerapi.listener.WorldListener;
+import me.eren.blocktrackerapi.storage.StorageType;
 import me.eren.blocktrackerapi.tracker.BlockTrackerImpl;
 import me.eren.blocktrackerapi.tracker.WorldTracker;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.World;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
 
 public final class BlockTrackerAPI extends JavaPlugin {
 
@@ -29,7 +34,22 @@ public final class BlockTrackerAPI extends JavaPlugin {
 			return;
 		}
 
-		impl = new BlockTrackerImpl(getDataFolder(), getLogger());
+		saveDefaultConfig();
+
+		StorageType storageType = StorageType.parse(getConfig().getString("storage"));
+		if (storageType == null) {
+			getLogger().warning("Unknown 'storage' value in config.yml; defaulting to pdc");
+			storageType = StorageType.PDC;
+		}
+
+		Set<String> untrackedWorlds = new HashSet<>();
+		for (String name : getConfig().getStringList("untracked-worlds")) {
+			if (name != null && !name.isBlank()) {
+				untrackedWorlds.add(name.trim().toLowerCase(Locale.ROOT));
+			}
+		}
+
+		impl = new BlockTrackerImpl(this, storageType, untrackedWorlds);
 		tracker = impl;
 
 		for (World world : Bukkit.getWorlds()) {
@@ -38,7 +58,7 @@ public final class BlockTrackerAPI extends JavaPlugin {
 				continue;
 			}
 			for (Chunk chunk : world.getLoadedChunks()) {
-				worldTracker.loadChunk(chunk.getX(), chunk.getZ());
+				worldTracker.loadChunk(chunk);
 			}
 		}
 

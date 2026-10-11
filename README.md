@@ -78,6 +78,25 @@ Setting a block updates it in memory and persists it when its chunk unloads.
 
 ---
 
+## Configuration
+
+```yaml
+# storage:
+#   pdc    - store data on each chunk's PDC. Should be faster, but will cause larger world files
+#   sqlite - store data in a per-world SQLite database in this plugin's folder
+storage: pdc
+
+# worlds to skip entirely.
+untracked-worlds:
+  - example_world
+```
+
+- Changes to the config require a server restart.
+- Switching backends does NOT migrate existing data!
+- Worlds listed in `untracked-worlds` are never tracked. `isNatural` always returns `true`, and `setNatural` does nothing.
+
+---
+
 ## Cases
 
 | Event | Effect on the position |
